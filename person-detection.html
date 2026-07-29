@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Detecție persoane — cameră live</title>
+<meta name="description" content="Aplicație care folosește camera și încadrează persoanele detectate cu eticheta HUMAN.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0d12;
+    color: #eef1f5;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 16px 32px;
+  }
+  h1 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 4px 0 0;
+    text-align: center;
+  }
+  #status {
+    font-size: 0.9rem;
+    color: #9aa4b2;
+    min-height: 1.2em;
+    text-align: center;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    aspect-ratio: 4 / 3;
+    background: #14161c;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px -12px rgba(0,0,0,0.6);
+  }
+  video, canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  video.mirrored, canvas.mirrored { transform: scaleX(-1); }
+  #controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    background: #4f8cff;
+    color: #fff;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  button.secondary { background: #2a2e38; color: #d7dce4; }
+  #count {
+    font-size: 0.85rem;
+    color: #9aa4b2;
+  }
+  #count strong { color: #7fe08c; }
+  #tapMarker {
+    position: absolute;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    display: none;
+  }
+  #tapMarker .dot {
+    width: 18px;
+    height: 18px;
+    margin: -9px 0 0 -9px;
+    border: 2px solid #ffd23f;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.35);
+  }
+  #tapMarker .bubble {
+    position: absolute;
+    left: 50%;
+    top: 16px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: #ffd23f;
+    color: #221a00;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 8px;
+  }
+  #tapHint {
+    font-size: 0.8rem;
+    color: #6d7684;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>Detecție persoane în timp real</h1>
+<div id="status">Apasă „Pornește camera” pentru a începe.</div>
+
+<div id="stage">
+  <video id="video" class="mirrored" autoplay playsinline muted></video>
+  <canvas id="overlay" class="mirrored"></canvas>
+  <div id="tapMarker"><div class="dot"></div><div class="bubble"></div></div>
+</div>
+
+<div id="controls">
+  <button id="startBtn">Pornește camera</button>
+  <button id="switchBtn" class="secondary">Schimbă camera</button>
+  <button id="stopBtn" class="secondary" disabled>Oprește</button>
+</div>
+<div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
+<div id="tapHint">Atinge ecranul ca să afli ce e în acel punct.</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const switchBtn = document.getElementById('switchBtn');
+const stopBtn = document.getElementById('stopBtn');
+const countValue = document.getElementById('countValue');
+const tapMarker = document.getElementById('tapMarker');
+const tapBubble = tapMarker.querySelector('.bubble');
+
+const CLASS_RO = {
+  person: 'persoană', bicycle: 'bicicletă', car: 'mașină', motorcycle: 'motocicletă',
+  airplane: 'avion', bus: 'autobuz', train: 'tren', truck: 'camion', boat: 'barcă',
+  'traffic light': 'semafor', 'fire hydrant': 'hidrant', 'stop sign': 'indicator stop',
+  'parking meter': 'parcometru', bench: 'bancă', bird: 'pasăre', cat: 'pisică', dog: 'câine',
+  horse: 'cal', sheep: 'oaie', cow: 'vacă', elephant: 'elefant', bear: 'urs', zebra: 'zebră',
+  giraffe: 'girafă', backpack: 'rucsac', umbrella: 'umbrelă', handbag: 'geantă', tie: 'cravată',
+  suitcase: 'valiză', frisbee: 'frisbee', skis: 'schiuri', snowboard: 'placă de snowboard',
+  'sports ball': 'minge', kite: 'zmeu', 'baseball bat': 'bâtă de baseball',
+  'baseball glove': 'mănușă de baseball', skateboard: 'skateboard', surfboard: 'placă de surf',
+  'tennis racket': 'rachetă de tenis', bottle: 'sticlă', 'wine glass': 'pahar de vin',
+  cup: 'cană', fork: 'furculiță', knife: 'cuțit', spoon: 'lingură', bowl: 'bol', banana: 'banană',
+  apple: 'măr', sandwich: 'sandviș', orange: 'portocală', broccoli: 'broccoli', carrot: 'morcov',
+  'hot dog': 'hot dog', pizza: 'pizza', donut: 'gogoașă', cake: 'tort', chair: 'scaun',
+  couch: 'canapea', 'potted plant': 'plantă ghivecită', bed: 'pat', 'dining table': 'masă',
+  toilet: 'toaletă', tv: 'televizor', laptop: 'laptop', mouse: 'mouse', remote: 'telecomandă',
+  keyboard: 'tastatură', 'cell phone': 'telefon', microwave: 'cuptor cu microunde',
+  oven: 'cuptor', toaster: 'prăjitor de pâine', sink: 'chiuvetă', refrigerator: 'frigider',
+  book: 'carte', clock: 'ceas', vase: 'vază', scissors: 'foarfecă', 'teddy bear': 'ursuleț de pluș',
+  'hair drier': 'uscător de păr', toothbrush: 'periuță de dinți'
+};
+
+function labelRo(cls) {
+  return CLASS_RO[cls] || cls;
+}
+
+let bodyModel = null;
+let faceModel = null;
+let modelError = null;
+let stream = null;
+let running = false;
+let rafId = null;
+let currentFacing = 'user';   // 'user' = cameră față, 'environment' = cameră spate
+let mirrored = true;          // doar camera față se oglindește
+let lastPredictions = [];     // toate obiectele văzute în ultimul cadru (nu doar persoane)
+let tapMarkerTimeout = null;
+
+function applyMirror() {
+  video.classList.toggle('mirrored', mirrored);
+  canvas.classList.toggle('mirrored', mirrored);
+}
+
+async function loadModels() {
+  // iOS Safari's WebGL2 driver fails to link tfjs's packed shaders
+  // ("Failed to link vertex and fragment shaders"); WebGL1 avoids it.
+  tf.env().set('WEBGL_VERSION', 1);
+  try {
+    await tf.setBackend('webgl');
+    await tf.ready();
+    bodyModel = await cocoSsd.load();
+  } catch (err) {
+    // Fall back to the much slower CPU backend if WebGL is unusable at all.
+    try {
+      await tf.setBackend('cpu');
+      await tf.ready();
+      bodyModel = await cocoSsd.load();
+    } catch (err2) {
+      modelError = err2;
+      statusEl.textContent = 'Cameră pornită, dar modelul AI nu s-a putut încărca: ' + err2.message;
+      return;
+    }
+  }
+
+  // Detecția feței e doar un bonus pentru încadrare mai precisă — dacă nu
+  // se încarcă, aplicația tot funcționează cu încadrarea pe tot corpul.
+  try {
+    faceModel = await blazeface.load();
+  } catch (err) {
+    console.error('Modelul de detecție a feței nu s-a încărcat:', err);
+    faceModel = null;
+  }
+
+  if (running) {
+    statusEl.textContent = tf.getBackend() === 'cpu'
+      ? 'Detecție activă (mod compatibilitate, mai lent).'
+      : 'Detecție activă.';
+  }
+}
+
+async function openStream() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: currentFacing } },
+    audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+}
+
+async function startCamera() {
+  startBtn.disabled = true;
+  statusEl.textContent = 'Se solicită acces la cameră…';
+  try {
+    await openStream();
+    running = true;
+    stopBtn.disabled = false;
+    statusEl.textContent = bodyModel ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
+    detectLoop();
+  } catch (err) {
+    statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
+    startBtn.disabled = false;
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  countValue.textContent = '0';
+  lastPredictions = [];
+  tapMarker.style.display = 'none';
+  statusEl.textContent = 'Oprit. Apasă „Pornește camera” pentru a relua.';
+}
+
+async function switchCamera() {
+  switchBtn.disabled = true;
+  currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+  mirrored = currentFacing === 'user';
+  applyMirror();
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  if (running) {
+    if (rafId) cancelAnimationFrame(rafId);
+    statusEl.textContent = 'Se comută camera…';
+    try {
+      await openStream();
+      statusEl.textContent = bodyModel ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
+      detectLoop();
+    } catch (err) {
+      running = false;
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+      statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
+    }
+  } else {
+    statusEl.textContent = currentFacing === 'user'
+      ? 'Cameră față selectată. Apasă „Pornește camera”.'
+      : 'Cameră spate selectată. Apasă „Pornește camera”.';
+  }
+  switchBtn.disabled = false;
+}
+
+// Alege încadrarea unei persoane: dacă fața ei e clar vizibilă și suficient
+// de mare, încadrăm fața; altfel încadrăm tot corpul detectat.
+function chooseFraming(person, faces) {
+  const [px, py, pw, ph] = person.bbox;
+  let best = null;
+  let bestArea = 0;
+
+  faces.forEach(f => {
+    const fx = f.topLeft[0], fy = f.topLeft[1];
+    const fw = f.bottomRight[0] - fx, fh = f.bottomRight[1] - fy;
+    const cx = fx + fw / 2, cy = fy + fh / 2;
+    if (cx < px || cx > px + pw || cy < py || cy > py + ph) return;
+    const area = fw * fh;
+    if (area > bestArea) {
+      bestArea = area;
+      best = { x: fx, y: fy, w: fw, h: fh };
+    }
+  });
+
+  // Fața trebuie să fie o parte semnificativă a corpului ca s-o considerăm
+  // "clar vizibilă"; altfel rămânem pe încadrarea întregului corp.
+  if (best && best.w > pw * 0.14) {
+    const padX = best.w * 0.35;
+    const padY = best.h * 0.45;
+    return {
+      x: Math.max(0, best.x - padX),
+      y: Math.max(0, best.y - padY),
+      w: best.w + padX * 2,
+      h: best.h + padY * 2.1,
+      kind: 'face'
+    };
+  }
+
+  return { x: px, y: py, w: pw, h: ph, kind: 'body' };
+}
+
+// Convertește coordonatele unui click/tap (în spațiul ecranului) în
+// coordonate pe cadrul video brut (același sistem folosit de bbox-urile
+// coco-ssd), ținând cont de object-fit: cover și de oglindirea camerei față.
+function pointerToVideoCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh || !rect.width || !rect.height) return null;
+
+  const scale = Math.max(rect.width / vw, rect.height / vh);
+  const offsetX = (rect.width - vw * scale) / 2;
+  const offsetY = (rect.height - vh * scale) / 2;
+
+  const boxX = mirrored ? (rect.width - (clientX - rect.left)) : (clientX - rect.left);
+  const boxY = clientY - rect.top;
+
+  const x = (boxX - offsetX) / scale;
+  const y = (boxY - offsetY) / scale;
+
+  return {
+    x: Math.min(Math.max(x, 0), vw),
+    y: Math.min(Math.max(y, 0), vh)
+  };
+}
+
+function findObjectAt(x, y) {
+  let best = null;
+  let bestArea = Infinity;
+  lastPredictions.forEach(p => {
+    const [px, py, pw, ph] = p.bbox;
+    if (x < px || x > px + pw || y < py || y > py + ph) return;
+    const area = pw * ph;
+    if (area < bestArea) {
+      bestArea = area;
+      best = p;
+    }
+  });
+  return best;
+}
+
+function showTapMarker(clientX, clientY, text) {
+  const stageRect = canvas.parentElement.getBoundingClientRect();
+  tapMarker.style.left = (clientX - stageRect.left) + 'px';
+  tapMarker.style.top = (clientY - stageRect.top) + 'px';
+  tapBubble.textContent = text;
+  tapMarker.style.display = 'block';
+
+  clearTimeout(tapMarkerTimeout);
+  tapMarkerTimeout = setTimeout(() => {
+    tapMarker.style.display = 'none';
+  }, 2800);
+}
+
+function handleTap(evt) {
+  if (!running) {
+    showTapMarker(evt.clientX, evt.clientY, 'Pornește camera mai întâi');
+    return;
+  }
+  const point = pointerToVideoCoords(evt.clientX, evt.clientY);
+  if (!point) return;
+
+  const hit = findObjectAt(point.x, point.y);
+  if (hit) {
+    const text = `${labelRo(hit.class)} · ${(hit.score * 100).toFixed(0)}%`;
+    showTapMarker(evt.clientX, evt.clientY, text);
+  } else {
+    showTapMarker(evt.clientX, evt.clientY, 'Nu recunosc nimic clar aici');
+  }
+}
+
+async function detectLoop() {
+  if (!running) return;
+
+  if (!bodyModel) {
+    rafId = requestAnimationFrame(detectLoop);
+    return;
+  }
+
+  let predictions = [];
+  try {
+    predictions = await bodyModel.detect(video);
+    lastPredictions = predictions;
+  } catch (err) {
+    console.error('Detecție corp eșuată pe acest cadru:', err);
+  }
+
+  let faces = [];
+  if (faceModel) {
+    try {
+      faces = await faceModel.estimateFaces(video, false);
+    } catch (err) {
+      console.error('Detecție față eșuată, se dezactivează:', err);
+      faceModel = null; // nu mai reîncerca în fiecare cadru dacă e defect
+    }
+  }
+
+  const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.lineWidth = 3;
+  ctx.font = '600 18px -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+  ctx.textBaseline = 'bottom';
+
+  people.forEach(p => {
+    const box = chooseFraming(p, faces);
+
+    ctx.strokeStyle = '#00ff6a';
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+
+    const label = `HUMAN ${(p.score * 100).toFixed(0)}%`;
+    const textWidth = ctx.measureText(label).width;
+    const labelH = 24;
+
+    ctx.fillStyle = '#00ff6a';
+    ctx.fillRect(box.x - 1.5, box.y - labelH, textWidth + 12, labelH);
+
+    ctx.fillStyle = '#0b0d12';
+    if (mirrored) {
+      // text is mirrored back so it reads correctly despite the mirrored canvas
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.fillText(label, -(box.x + 6 + textWidth), box.y - 5);
+      ctx.restore();
+    } else {
+      ctx.fillText(label, box.x + 6, box.y - 5);
+    }
+  });
+
+  countValue.textContent = String(people.length);
+  rafId = requestAnimationFrame(detectLoop);
+}
+
+startBtn.addEventListener('click', startCamera);
+switchBtn.addEventListener('click', switchCamera);
+stopBtn.addEventListener('click', stopCamera);
+canvas.addEventListener('click', handleTap);
+
+loadModels();
+</script>
+
+</body>
+</html>
