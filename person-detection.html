@@ -83,7 +83,7 @@
 <body>
 
 <h1>Detecție persoane în timp real</h1>
-<div id="status">Se încarcă modelul de detecție…</div>
+<div id="status">Apasă „Pornește camera” pentru a începe.</div>
 
 <div id="stage">
   <video id="video" autoplay playsinline muted></video>
@@ -91,7 +91,7 @@
 </div>
 
 <div id="controls">
-  <button id="startBtn" disabled>Pornește camera</button>
+  <button id="startBtn">Pornește camera</button>
   <button id="stopBtn" class="secondary" disabled>Oprește</button>
 </div>
 <div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
@@ -108,6 +108,7 @@ const stopBtn = document.getElementById('stopBtn');
 const countValue = document.getElementById('countValue');
 
 let model = null;
+let modelError = null;
 let stream = null;
 let running = false;
 let rafId = null;
@@ -115,10 +116,10 @@ let rafId = null;
 async function loadModel() {
   try {
     model = await cocoSsd.load();
-    statusEl.textContent = 'Model încărcat. Apasă „Pornește camera”.';
-    startBtn.disabled = false;
+    if (running) statusEl.textContent = 'Detecție activă.';
   } catch (err) {
-    statusEl.textContent = 'Eroare la încărcarea modelului: ' + err.message;
+    modelError = err;
+    statusEl.textContent = 'Cameră pornită, dar modelul AI nu s-a putut încărca: ' + err.message;
   }
 }
 
@@ -138,7 +139,7 @@ async function startCamera() {
 
     running = true;
     stopBtn.disabled = false;
-    statusEl.textContent = 'Detecție activă.';
+    statusEl.textContent = model ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
     detectLoop();
   } catch (err) {
     statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
@@ -162,6 +163,11 @@ function stopCamera() {
 
 async function detectLoop() {
   if (!running) return;
+
+  if (!model) {
+    rafId = requestAnimationFrame(detectLoop);
+    return;
+  }
 
   const predictions = await model.detect(video);
   const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
