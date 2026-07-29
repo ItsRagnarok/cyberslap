@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Detecție persoane — cameră live</title>
+<meta name="description" content="Aplicație care folosește camera și încadrează persoanele detectate cu eticheta HUMAN.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0d12;
+    color: #eef1f5;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 16px 32px;
+  }
+  h1 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 4px 0 0;
+    text-align: center;
+  }
+  #status {
+    font-size: 0.9rem;
+    color: #9aa4b2;
+    min-height: 1.2em;
+    text-align: center;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    aspect-ratio: 4 / 3;
+    background: #14161c;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px -12px rgba(0,0,0,0.6);
+  }
+  video, canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  video { transform: scaleX(-1); }
+  canvas { transform: scaleX(-1); }
+  #controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    background: #4f8cff;
+    color: #fff;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:not(:disabled):hover { transform: translateY(-1px); }
+  button.secondary { background: #2a2e38; color: #d7dce4; }
+  #count {
+    font-size: 0.85rem;
+    color: #9aa4b2;
+  }
+  #count strong { color: #7fe08c; }
+</style>
+</head>
+<body>
+
+<h1>Detecție persoane în timp real</h1>
+<div id="status">Se încarcă modelul de detecție…</div>
+
+<div id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+</div>
+
+<div id="controls">
+  <button id="startBtn" disabled>Pornește camera</button>
+  <button id="stopBtn" class="secondary" disabled>Oprește</button>
+</div>
+<div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const countValue = document.getElementById('countValue');
+
+let model = null;
+let stream = null;
+let running = false;
+let rafId = null;
+
+async function loadModel() {
+  try {
+    model = await cocoSsd.load();
+    statusEl.textContent = 'Model încărcat. Apasă „Pornește camera”.';
+    startBtn.disabled = false;
+  } catch (err) {
+    statusEl.textContent = 'Eroare la încărcarea modelului: ' + err.message;
+  }
+}
+
+async function startCamera() {
+  startBtn.disabled = true;
+  statusEl.textContent = 'Se solicită acces la cameră…';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user' },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    running = true;
+    stopBtn.disabled = false;
+    statusEl.textContent = 'Detecție activă.';
+    detectLoop();
+  } catch (err) {
+    statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
+    startBtn.disabled = false;
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  countValue.textContent = '0';
+  statusEl.textContent = 'Oprit. Apasă „Pornește camera” pentru a relua.';
+}
+
+async function detectLoop() {
+  if (!running) return;
+
+  const predictions = await model.detect(video);
+  const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.lineWidth = 3;
+  ctx.font = '600 18px -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+  ctx.textBaseline = 'bottom';
+
+  people.forEach(p => {
+    const [x, y, w, h] = p.bbox;
+
+    ctx.strokeStyle = '#00ff6a';
+    ctx.strokeRect(x, y, w, h);
+
+    const label = `HUMAN ${(p.score * 100).toFixed(0)}%`;
+    const textWidth = ctx.measureText(label).width;
+    const labelH = 24;
+
+    ctx.fillStyle = '#00ff6a';
+    ctx.fillRect(x - 1.5, y - labelH, textWidth + 12, labelH);
+
+    // text is mirrored back so it reads correctly despite the mirrored canvas
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.fillStyle = '#0b0d12';
+    ctx.fillText(label, -(x + 6 + textWidth), y - 5);
+    ctx.restore();
+  });
+
+  countValue.textContent = String(people.length);
+  rafId = requestAnimationFrame(detectLoop);
+}
+
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
+
+loadModel();
+</script>
+
+</body>
+</html>
