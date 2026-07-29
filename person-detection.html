@@ -50,8 +50,7 @@
     height: 100%;
     object-fit: cover;
   }
-  video { transform: scaleX(-1); }
-  canvas { transform: scaleX(-1); }
+  video.mirrored, canvas.mirrored { transform: scaleX(-1); }
   #controls {
     display: flex;
     gap: 10px;
@@ -86,41 +85,52 @@
 <div id="status">Apasă „Pornește camera” pentru a începe.</div>
 
 <div id="stage">
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="overlay"></canvas>
+  <video id="video" class="mirrored" autoplay playsinline muted></video>
+  <canvas id="overlay" class="mirrored"></canvas>
 </div>
 
 <div id="controls">
   <button id="startBtn">Pornește camera</button>
+  <button id="switchBtn" class="secondary">Schimbă camera</button>
   <button id="stopBtn" class="secondary" disabled>Oprește</button>
 </div>
 <div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js"></script>
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
+const switchBtn = document.getElementById('switchBtn');
 const stopBtn = document.getElementById('stopBtn');
 const countValue = document.getElementById('countValue');
 
-let model = null;
+let bodyModel = null;
+let faceModel = null;
 let modelError = null;
 let stream = null;
 let running = false;
 let rafId = null;
+let currentFacing = 'user';   // 'user' = cameră față, 'environment' = cameră spate
+let mirrored = true;          // doar camera față se oglindește
 
-async function loadModel() {
+function applyMirror() {
+  video.classList.toggle('mirrored', mirrored);
+  canvas.classList.toggle('mirrored', mirrored);
+}
+
+async function loadModels() {
   // iOS Safari's WebGL2 driver fails to link tfjs's packed shaders
   // ("Failed to link vertex and fragment shaders"); WebGL1 avoids it.
   tf.env().set('WEBGL_VERSION', 1);
   try {
     await tf.setBackend('webgl');
     await tf.ready();
-    model = await cocoSsd.load();
+    [bodyModel, faceModel] = await Promise.all([cocoSsd.load(), blazeface.load()]);
     if (running) statusEl.textContent = 'Detecție activă.';
     return;
   } catch (err) {
@@ -128,7 +138,7 @@ async function loadModel() {
     try {
       await tf.setBackend('cpu');
       await tf.ready();
-      model = await cocoSsd.load();
+      [bodyModel, faceModel] = await Promise.all([cocoSsd.load(), blazeface.load()]);
       if (running) statusEl.textContent = 'Detecție activă (mod compatibilitate, mai lent).';
       return;
     } catch (err2) {
@@ -138,23 +148,25 @@ async function loadModel() {
   }
 }
 
+async function openStream() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: currentFacing } },
+    audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+}
+
 async function startCamera() {
   startBtn.disabled = true;
   statusEl.textContent = 'Se solicită acces la cameră…';
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user' },
-      audio: false
-    });
-    video.srcObject = stream;
-    await video.play();
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
+    await openStream();
     running = true;
     stopBtn.disabled = false;
-    statusEl.textContent = model ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
+    statusEl.textContent = bodyModel ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
     detectLoop();
   } catch (err) {
     statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
@@ -176,15 +188,86 @@ function stopCamera() {
   statusEl.textContent = 'Oprit. Apasă „Pornește camera” pentru a relua.';
 }
 
+async function switchCamera() {
+  switchBtn.disabled = true;
+  currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+  mirrored = currentFacing === 'user';
+  applyMirror();
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  if (running) {
+    if (rafId) cancelAnimationFrame(rafId);
+    statusEl.textContent = 'Se comută camera…';
+    try {
+      await openStream();
+      statusEl.textContent = bodyModel ? 'Detecție activă.' : 'Cameră pornită, se încarcă modelul AI…';
+      detectLoop();
+    } catch (err) {
+      running = false;
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+      statusEl.textContent = 'Acces refuzat sau cameră indisponibilă: ' + err.message;
+    }
+  } else {
+    statusEl.textContent = currentFacing === 'user'
+      ? 'Cameră față selectată. Apasă „Pornește camera”.'
+      : 'Cameră spate selectată. Apasă „Pornește camera”.';
+  }
+  switchBtn.disabled = false;
+}
+
+// Alege încadrarea unei persoane: dacă fața ei e clar vizibilă și suficient
+// de mare, încadrăm fața; altfel încadrăm tot corpul detectat.
+function chooseFraming(person, faces) {
+  const [px, py, pw, ph] = person.bbox;
+  let best = null;
+  let bestArea = 0;
+
+  faces.forEach(f => {
+    const fx = f.topLeft[0], fy = f.topLeft[1];
+    const fw = f.bottomRight[0] - fx, fh = f.bottomRight[1] - fy;
+    const cx = fx + fw / 2, cy = fy + fh / 2;
+    if (cx < px || cx > px + pw || cy < py || cy > py + ph) return;
+    const area = fw * fh;
+    if (area > bestArea) {
+      bestArea = area;
+      best = { x: fx, y: fy, w: fw, h: fh };
+    }
+  });
+
+  // Fața trebuie să fie o parte semnificativă a corpului ca s-o considerăm
+  // "clar vizibilă"; altfel rămânem pe încadrarea întregului corp.
+  if (best && best.w > pw * 0.14) {
+    const padX = best.w * 0.35;
+    const padY = best.h * 0.45;
+    return {
+      x: Math.max(0, best.x - padX),
+      y: Math.max(0, best.y - padY),
+      w: best.w + padX * 2,
+      h: best.h + padY * 2.1,
+      kind: 'face'
+    };
+  }
+
+  return { x: px, y: py, w: pw, h: ph, kind: 'body' };
+}
+
 async function detectLoop() {
   if (!running) return;
 
-  if (!model) {
+  if (!bodyModel) {
     rafId = requestAnimationFrame(detectLoop);
     return;
   }
 
-  const predictions = await model.detect(video);
+  const [predictions, faces] = await Promise.all([
+    bodyModel.detect(video),
+    faceModel ? faceModel.estimateFaces(video, false) : Promise.resolve([])
+  ]);
   const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -193,24 +276,28 @@ async function detectLoop() {
   ctx.textBaseline = 'bottom';
 
   people.forEach(p => {
-    const [x, y, w, h] = p.bbox;
+    const box = chooseFraming(p, faces);
 
     ctx.strokeStyle = '#00ff6a';
-    ctx.strokeRect(x, y, w, h);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-    const label = `HUMAN ${(p.score * 100).toFixed(0)}%`;
+    const label = 'HUMAN';
     const textWidth = ctx.measureText(label).width;
     const labelH = 24;
 
     ctx.fillStyle = '#00ff6a';
-    ctx.fillRect(x - 1.5, y - labelH, textWidth + 12, labelH);
+    ctx.fillRect(box.x - 1.5, box.y - labelH, textWidth + 12, labelH);
 
-    // text is mirrored back so it reads correctly despite the mirrored canvas
-    ctx.save();
-    ctx.scale(-1, 1);
     ctx.fillStyle = '#0b0d12';
-    ctx.fillText(label, -(x + 6 + textWidth), y - 5);
-    ctx.restore();
+    if (mirrored) {
+      // text is mirrored back so it reads correctly despite the mirrored canvas
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.fillText(label, -(box.x + 6 + textWidth), box.y - 5);
+      ctx.restore();
+    } else {
+      ctx.fillText(label, box.x + 6, box.y - 5);
+    }
   });
 
   countValue.textContent = String(people.length);
@@ -218,9 +305,10 @@ async function detectLoop() {
 }
 
 startBtn.addEventListener('click', startCamera);
+switchBtn.addEventListener('click', switchCamera);
 stopBtn.addEventListener('click', stopCamera);
 
-loadModel();
+loadModels();
 </script>
 
 </body>
