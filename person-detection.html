@@ -77,6 +77,38 @@
     color: #9aa4b2;
   }
   #count strong { color: #7fe08c; }
+  #tapMarker {
+    position: absolute;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    display: none;
+  }
+  #tapMarker .dot {
+    width: 18px;
+    height: 18px;
+    margin: -9px 0 0 -9px;
+    border: 2px solid #ffd23f;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.35);
+  }
+  #tapMarker .bubble {
+    position: absolute;
+    left: 50%;
+    top: 16px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: #ffd23f;
+    color: #221a00;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 8px;
+  }
+  #tapHint {
+    font-size: 0.8rem;
+    color: #6d7684;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -87,6 +119,7 @@
 <div id="stage">
   <video id="video" class="mirrored" autoplay playsinline muted></video>
   <canvas id="overlay" class="mirrored"></canvas>
+  <div id="tapMarker"><div class="dot"></div><div class="bubble"></div></div>
 </div>
 
 <div id="controls">
@@ -95,6 +128,7 @@
   <button id="stopBtn" class="secondary" disabled>Oprește</button>
 </div>
 <div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
+<div id="tapHint">Atinge ecranul ca să afli ce e în acel punct.</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
@@ -108,6 +142,34 @@ const startBtn = document.getElementById('startBtn');
 const switchBtn = document.getElementById('switchBtn');
 const stopBtn = document.getElementById('stopBtn');
 const countValue = document.getElementById('countValue');
+const tapMarker = document.getElementById('tapMarker');
+const tapBubble = tapMarker.querySelector('.bubble');
+
+const CLASS_RO = {
+  person: 'persoană', bicycle: 'bicicletă', car: 'mașină', motorcycle: 'motocicletă',
+  airplane: 'avion', bus: 'autobuz', train: 'tren', truck: 'camion', boat: 'barcă',
+  'traffic light': 'semafor', 'fire hydrant': 'hidrant', 'stop sign': 'indicator stop',
+  'parking meter': 'parcometru', bench: 'bancă', bird: 'pasăre', cat: 'pisică', dog: 'câine',
+  horse: 'cal', sheep: 'oaie', cow: 'vacă', elephant: 'elefant', bear: 'urs', zebra: 'zebră',
+  giraffe: 'girafă', backpack: 'rucsac', umbrella: 'umbrelă', handbag: 'geantă', tie: 'cravată',
+  suitcase: 'valiză', frisbee: 'frisbee', skis: 'schiuri', snowboard: 'placă de snowboard',
+  'sports ball': 'minge', kite: 'zmeu', 'baseball bat': 'bâtă de baseball',
+  'baseball glove': 'mănușă de baseball', skateboard: 'skateboard', surfboard: 'placă de surf',
+  'tennis racket': 'rachetă de tenis', bottle: 'sticlă', 'wine glass': 'pahar de vin',
+  cup: 'cană', fork: 'furculiță', knife: 'cuțit', spoon: 'lingură', bowl: 'bol', banana: 'banană',
+  apple: 'măr', sandwich: 'sandviș', orange: 'portocală', broccoli: 'broccoli', carrot: 'morcov',
+  'hot dog': 'hot dog', pizza: 'pizza', donut: 'gogoașă', cake: 'tort', chair: 'scaun',
+  couch: 'canapea', 'potted plant': 'plantă ghivecită', bed: 'pat', 'dining table': 'masă',
+  toilet: 'toaletă', tv: 'televizor', laptop: 'laptop', mouse: 'mouse', remote: 'telecomandă',
+  keyboard: 'tastatură', 'cell phone': 'telefon', microwave: 'cuptor cu microunde',
+  oven: 'cuptor', toaster: 'prăjitor de pâine', sink: 'chiuvetă', refrigerator: 'frigider',
+  book: 'carte', clock: 'ceas', vase: 'vază', scissors: 'foarfecă', 'teddy bear': 'ursuleț de pluș',
+  'hair drier': 'uscător de păr', toothbrush: 'periuță de dinți'
+};
+
+function labelRo(cls) {
+  return CLASS_RO[cls] || cls;
+}
 
 let bodyModel = null;
 let faceModel = null;
@@ -117,6 +179,8 @@ let running = false;
 let rafId = null;
 let currentFacing = 'user';   // 'user' = cameră față, 'environment' = cameră spate
 let mirrored = true;          // doar camera față se oglindește
+let lastPredictions = [];     // toate obiectele văzute în ultimul cadru (nu doar persoane)
+let tapMarkerTimeout = null;
 
 function applyMirror() {
   video.classList.toggle('mirrored', mirrored);
@@ -197,6 +261,8 @@ function stopCamera() {
   startBtn.disabled = false;
   stopBtn.disabled = true;
   countValue.textContent = '0';
+  lastPredictions = [];
+  tapMarker.style.display = 'none';
   statusEl.textContent = 'Oprit. Apasă „Pornește camera” pentru a relua.';
 }
 
@@ -268,6 +334,75 @@ function chooseFraming(person, faces) {
   return { x: px, y: py, w: pw, h: ph, kind: 'body' };
 }
 
+// Convertește coordonatele unui click/tap (în spațiul ecranului) în
+// coordonate pe cadrul video brut (același sistem folosit de bbox-urile
+// coco-ssd), ținând cont de object-fit: cover și de oglindirea camerei față.
+function pointerToVideoCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh || !rect.width || !rect.height) return null;
+
+  const scale = Math.max(rect.width / vw, rect.height / vh);
+  const offsetX = (rect.width - vw * scale) / 2;
+  const offsetY = (rect.height - vh * scale) / 2;
+
+  const boxX = mirrored ? (rect.width - (clientX - rect.left)) : (clientX - rect.left);
+  const boxY = clientY - rect.top;
+
+  const x = (boxX - offsetX) / scale;
+  const y = (boxY - offsetY) / scale;
+
+  return {
+    x: Math.min(Math.max(x, 0), vw),
+    y: Math.min(Math.max(y, 0), vh)
+  };
+}
+
+function findObjectAt(x, y) {
+  let best = null;
+  let bestArea = Infinity;
+  lastPredictions.forEach(p => {
+    const [px, py, pw, ph] = p.bbox;
+    if (x < px || x > px + pw || y < py || y > py + ph) return;
+    const area = pw * ph;
+    if (area < bestArea) {
+      bestArea = area;
+      best = p;
+    }
+  });
+  return best;
+}
+
+function showTapMarker(clientX, clientY, text) {
+  const stageRect = canvas.parentElement.getBoundingClientRect();
+  tapMarker.style.left = (clientX - stageRect.left) + 'px';
+  tapMarker.style.top = (clientY - stageRect.top) + 'px';
+  tapBubble.textContent = text;
+  tapMarker.style.display = 'block';
+
+  clearTimeout(tapMarkerTimeout);
+  tapMarkerTimeout = setTimeout(() => {
+    tapMarker.style.display = 'none';
+  }, 2800);
+}
+
+function handleTap(evt) {
+  if (!running) {
+    showTapMarker(evt.clientX, evt.clientY, 'Pornește camera mai întâi');
+    return;
+  }
+  const point = pointerToVideoCoords(evt.clientX, evt.clientY);
+  if (!point) return;
+
+  const hit = findObjectAt(point.x, point.y);
+  if (hit) {
+    const text = `${labelRo(hit.class)} · ${(hit.score * 100).toFixed(0)}%`;
+    showTapMarker(evt.clientX, evt.clientY, text);
+  } else {
+    showTapMarker(evt.clientX, evt.clientY, 'Nu recunosc nimic clar aici');
+  }
+}
+
 async function detectLoop() {
   if (!running) return;
 
@@ -279,6 +414,7 @@ async function detectLoop() {
   let predictions = [];
   try {
     predictions = await bodyModel.detect(video);
+    lastPredictions = predictions;
   } catch (err) {
     console.error('Detecție corp eșuată pe acest cadru:', err);
   }
@@ -332,6 +468,7 @@ async function detectLoop() {
 startBtn.addEventListener('click', startCamera);
 switchBtn.addEventListener('click', switchCamera);
 stopBtn.addEventListener('click', stopCamera);
+canvas.addEventListener('click', handleTap);
 
 loadModels();
 </script>
