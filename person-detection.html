@@ -130,21 +130,33 @@ async function loadModels() {
   try {
     await tf.setBackend('webgl');
     await tf.ready();
-    [bodyModel, faceModel] = await Promise.all([cocoSsd.load(), blazeface.load()]);
-    if (running) statusEl.textContent = 'Detecție activă.';
-    return;
+    bodyModel = await cocoSsd.load();
   } catch (err) {
     // Fall back to the much slower CPU backend if WebGL is unusable at all.
     try {
       await tf.setBackend('cpu');
       await tf.ready();
-      [bodyModel, faceModel] = await Promise.all([cocoSsd.load(), blazeface.load()]);
-      if (running) statusEl.textContent = 'Detecție activă (mod compatibilitate, mai lent).';
-      return;
+      bodyModel = await cocoSsd.load();
     } catch (err2) {
       modelError = err2;
       statusEl.textContent = 'Cameră pornită, dar modelul AI nu s-a putut încărca: ' + err2.message;
+      return;
     }
+  }
+
+  // Detecția feței e doar un bonus pentru încadrare mai precisă — dacă nu
+  // se încarcă, aplicația tot funcționează cu încadrarea pe tot corpul.
+  try {
+    faceModel = await blazeface.load();
+  } catch (err) {
+    console.error('Modelul de detecție a feței nu s-a încărcat:', err);
+    faceModel = null;
+  }
+
+  if (running) {
+    statusEl.textContent = tf.getBackend() === 'cpu'
+      ? 'Detecție activă (mod compatibilitate, mai lent).'
+      : 'Detecție activă.';
   }
 }
 
@@ -264,10 +276,23 @@ async function detectLoop() {
     return;
   }
 
-  const [predictions, faces] = await Promise.all([
-    bodyModel.detect(video),
-    faceModel ? faceModel.estimateFaces(video, false) : Promise.resolve([])
-  ]);
+  let predictions = [];
+  try {
+    predictions = await bodyModel.detect(video);
+  } catch (err) {
+    console.error('Detecție corp eșuată pe acest cadru:', err);
+  }
+
+  let faces = [];
+  if (faceModel) {
+    try {
+      faces = await faceModel.estimateFaces(video, false);
+    } catch (err) {
+      console.error('Detecție față eșuată, se dezactivează:', err);
+      faceModel = null; // nu mai reîncerca în fiecare cadru dacă e defect
+    }
+  }
+
   const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
