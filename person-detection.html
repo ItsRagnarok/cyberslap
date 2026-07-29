@@ -114,12 +114,27 @@ let running = false;
 let rafId = null;
 
 async function loadModel() {
+  // iOS Safari's WebGL2 driver fails to link tfjs's packed shaders
+  // ("Failed to link vertex and fragment shaders"); WebGL1 avoids it.
+  tf.env().set('WEBGL_VERSION', 1);
   try {
+    await tf.setBackend('webgl');
+    await tf.ready();
     model = await cocoSsd.load();
     if (running) statusEl.textContent = 'Detecție activă.';
+    return;
   } catch (err) {
-    modelError = err;
-    statusEl.textContent = 'Cameră pornită, dar modelul AI nu s-a putut încărca: ' + err.message;
+    // Fall back to the much slower CPU backend if WebGL is unusable at all.
+    try {
+      await tf.setBackend('cpu');
+      await tf.ready();
+      model = await cocoSsd.load();
+      if (running) statusEl.textContent = 'Detecție activă (mod compatibilitate, mai lent).';
+      return;
+    } catch (err2) {
+      modelError = err2;
+      statusEl.textContent = 'Cameră pornită, dar modelul AI nu s-a putut încărca: ' + err2.message;
+    }
   }
 }
 
