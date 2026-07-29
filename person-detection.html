@@ -306,7 +306,7 @@ async function detectLoop() {
     ctx.strokeStyle = '#00ff6a';
     ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-    const label = 'HUMAN';
+    const label = `HUMAN ${(p.score * 100).toFixed(0)}%`;
     const textWidth = ctx.measureText(label).width;
     const labelH = 24;
 
