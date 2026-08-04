@@ -9,6 +9,7 @@ Hub-ul workspace-ului. Repo-ul găzduiește proiecte separate, fără legătură
 ## Proiecte
 
 - [[Personal AI]] — sistem privat de analiză zilnică, coaching și predicție a traiectoriei. Proiectul activ.
+- [[Hello Agent]] — cel mai mic exemplu de agent AI (tool-use loop), construit ca test pentru fluxul brain.
 - [[Cofetăria Sas]] — site de prezentare, static, terminat.
 
 ## Convenții
