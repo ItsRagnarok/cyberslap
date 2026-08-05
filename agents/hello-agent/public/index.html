@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello Agent — local</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot" id="status-dot"></span>
+        <span>Hello Agent</span>
+      </div>
+      <button id="reset" class="ghost-btn">Conversație nouă</button>
+    </header>
+
+    <main id="log" class="log" aria-live="polite"></main>
+
+    <form id="form" class="composer">
+      <input
+        id="input"
+        type="text"
+        placeholder="Întreabă-l ceva despre repo, sau orice altceva..."
+        autocomplete="off"
+        autofocus
+      />
+      <button type="submit" id="send">Trimite</button>
+    </form>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
