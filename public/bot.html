@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>CyberSlap: Bomb Toss — Antrenament vs Bot</title>
+<meta name="theme-color" content="#04050c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{
+  height:100%; margin:0; overflow:hidden; overscroll-behavior:none;
+  background:#04050c; color:#eef4ff;
+  font-family:"Rajdhani","Segoe UI",sans-serif;
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+  touch-action:none;
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+h1,h2,.font-display{ font-family:"Orbitron","Rajdhani",sans-serif; }
+button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+
+:root{
+  --bg:#04050c; --panel:#0b0e1c; --line:#1c2140;
+  --cyan:#00f6ff; --cyan-dim:#0aa3ad;
+  --magenta:#ff2ee0; --magenta-dim:#a5199a;
+  --gold:#ffd23f; --danger:#ff3b5c; --muted:#8792b8;
+}
+
+.bg-grid{
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(0,246,255,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,246,255,0.06) 1px, transparent 1px);
+  background-size:40px 40px;
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, black 10%, transparent 78%);
+          mask-image: radial-gradient(circle at 50% 40%, black 10%, transparent 78%);
+}
+
+#stage{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); }
+.screen{ display:none; width:100%; max-width:440px; text-align:center; }
+.screen.visible{ display:flex; flex-direction:column; align-items:center; }
+
+.logo{
+  font-weight:900; letter-spacing:2px; line-height:1; margin:0 0 4px;
+  background:linear-gradient(90deg,var(--cyan),var(--magenta));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 18px rgba(0,246,255,.4)) drop-shadow(0 0 18px rgba(255,46,224,.3));
+  font-size:clamp(1.8rem,9vw,2.4rem);
+}
+.sub{ color:var(--muted); font-weight:600; margin:0 0 22px; }
+
+.btn{
+  padding:14px 22px; border-radius:14px; font-weight:800; letter-spacing:.5px;
+  background:var(--panel); border:2px solid var(--line); color:#c7cfec;
+}
+.btn.primary{
+  background:linear-gradient(90deg,var(--cyan),var(--magenta)); color:#04050c; border:none;
+  box-shadow:0 10px 26px -10px rgba(255,46,224,.55);
+}
+.btn:disabled{ opacity:.4; }
+.btn:active:not(:disabled){ transform:scale(.97); }
+.btn.active{ border-color:var(--gold); color:var(--gold); box-shadow:0 0 14px rgba(255,210,63,.3) inset; }
+
+.section-label{ font-size:.78rem; letter-spacing:2px; color:#7b86ad; font-weight:700; margin:16px 0 10px; text-transform:uppercase; }
+.chip-row{ display:flex; gap:10px; justify-content:center; width:100%; }
+.chip-row .btn{ flex:1; }
+
+#btnStart{ margin-top:22px; width:100%; padding:18px 0; font-size:1.1rem; }
+.howto{ margin-top:20px; font-size:.85rem; line-height:1.5; color:#8792b8; border-top:1px solid #1a1e38; padding-top:14px; }
+
+.big-icon{ font-size:3.6rem; margin-bottom:10px; }
+
+/* game */
+#screen-game{ height:100%; justify-content:space-between; padding:8px 0; max-width:520px; }
+.hud-top{ width:100%; display:flex; justify-content:space-between; align-items:center; padding:0 8px; }
+.hud-side{ text-align:center; }
+.hud-side .name{ font-size:.85rem; color:var(--muted); font-weight:700; }
+.hud-side .num{ font-family:"Orbitron",sans-serif; font-weight:900; font-size:1.8rem; }
+.pill{ display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:999px; border:1px solid var(--line); background:rgba(255,255,255,.03); font-size:.85rem; font-weight:700; }
+
+.play-surface{
+  flex:1; width:100%; display:flex; align-items:center; justify-content:center; margin:14px 0;
+  border-radius:28px; position:relative; overflow:hidden;
+}
+.play-surface.mine{
+  background:radial-gradient(circle at 50% 40%, rgba(255,59,92,.25), #180608 70%);
+  border:4px solid var(--danger); box-shadow:0 0 50px rgba(255,59,92,.4) inset;
+}
+.play-surface.theirs{ background:var(--panel); border:4px solid var(--line); }
+.play-surface .bomb-huge{ font-size:clamp(5rem,28vmin,9rem); filter:drop-shadow(0 0 20px rgba(255,80,80,.6)); }
+.play-surface.mine .bomb-huge{ animation:hugePulse .6s ease-in-out infinite; }
+@keyframes hugePulse{ 0%,100%{ transform:scale(1) rotate(-3deg);} 50%{ transform:scale(1.15) rotate(3deg);} }
+.play-surface .hint{ position:absolute; bottom:22px; left:0; right:0; text-align:center; font-weight:800; letter-spacing:1px; color:#fff; text-shadow:0 2px 8px #000; }
+.play-surface.theirs .hint{ color:var(--muted); text-shadow:none; }
+
+.result-overlay{
+  position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:8px;
+  background:rgba(4,5,12,.88); border-radius:28px; z-index:5;
+}
+.result-overlay.show{ display:flex; }
+.result-title{ font-family:"Orbitron",sans-serif; font-weight:900; font-size:2.2rem; }
+
+/* victory */
+#screen-victory .victory-title{ font-family:"Orbitron",sans-serif; font-weight:900; font-size:2.4rem; text-shadow:0 0 24px currentColor; }
+.victory-actions{ display:flex; gap:10px; width:100%; margin-top:26px; }
+.victory-actions .btn{ flex:1; }
+
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div id="stage">
+
+  <div class="screen visible" id="screen-setup">
+    <h1 class="logo">CYBERSLAP</h1>
+    <p class="sub">Antrenament solo vs Bot — nu ai nevoie de laptop sau al doilea telefon</p>
+
+    <div class="section-label">Dificultate bot</div>
+    <div class="chip-row" id="diffRow">
+      <button class="btn" data-d="easy">Ușor</button>
+      <button class="btn active" data-d="medium">Mediu</button>
+      <button class="btn" data-d="hard">Greu</button>
+    </div>
+
+    <div class="section-label">Primul la</div>
+    <div class="chip-row" id="targetRow">
+      <button class="btn" data-t="3">3</button>
+      <button class="btn active" data-t="5">5</button>
+      <button class="btn" data-t="7">7</button>
+    </div>
+
+    <button class="btn primary" id="btnStart">START</button>
+    <p class="howto">Ține telefonul în mână. Când <b>tu</b> ai bomba, scutur-o (sau apasă ecranul) ca s-o pasezi botului. Nimeni nu știe cât mai are fitilul — cine o ține când explodează, pierde runda.</p>
+  </div>
+
+  <div class="screen" id="screen-game">
+    <div class="hud-top">
+      <div class="hud-side"><div class="name" style="color:var(--danger);">TU</div><div class="num" id="myScore" style="color:var(--danger);">0</div></div>
+      <div class="pill" id="roundPill">Runda 1</div>
+      <div class="hud-side"><div class="name" style="color:var(--cyan);">BOT</div><div class="num" id="botScore" style="color:var(--cyan);">0</div></div>
+    </div>
+    <div class="play-surface theirs" id="playSurface">
+      <div class="bomb-huge" id="bombIcon" style="display:none;">💣</div>
+      <div class="hint" id="surfaceHint">botul are bomba…</div>
+      <div class="result-overlay" id="resultOverlay">
+        <div class="result-title" id="resultTitle"></div>
+        <div class="sub" id="resultSub" style="margin:0;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-victory">
+    <div class="big-icon" id="victoryIcon">🏆</div>
+    <div class="victory-title" id="victoryTitle">AI CÂȘTIGAT!</div>
+    <p class="sub" id="victorySub">5 – 3</p>
+    <div class="victory-actions">
+      <button class="btn primary" id="btnAgain">JOACĂ DIN NOU</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+const $ = (id)=>document.getElementById(id);
+const screens = ['setup','game','victory'].reduce((acc,k)=>{ acc[k]=$('screen-'+k); return acc; },{});
+function showScreen(name){
+  Object.values(screens).forEach(el=>el.classList.remove('visible'));
+  screens[name].classList.add('visible');
+}
+
+const MIN_HOLD_MS = 350;
+const DIFF_RANGES = {
+  easy:   { min: 1200, max: 3000 },
+  medium: { min: 700,  max: 1800 },
+  hard:   { min: 380,  max: 950  },
+};
+
+let matchTarget = 5;
+let difficulty = 'medium';
+let scores = { me: 0, bot: 0 };
+let roundNumber = 0;
+let holder = null; // 'me' | 'bot'
+let holderSince = 0;
+let roundResolved = false;
+let explodeTimer = null;
+let botTimer = null;
+let lastLocalPass = 0;
+
+/* ---------- setup screen ---------- */
+document.querySelectorAll('#diffRow .btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#diffRow .btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    difficulty = btn.dataset.d;
+  });
+});
+document.querySelectorAll('#targetRow .btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#targetRow .btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    matchTarget = parseInt(btn.dataset.t,10);
+  });
+});
+
+$('btnStart').addEventListener('click', async ()=>{
+  try{
+    if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      await DeviceMotionEvent.requestPermission();
+    }
+  }catch(e){}
+  attachMotionListener();
+  requestWakeLock();
+  scores = { me:0, bot:0 };
+  roundNumber = 0;
+  showScreen('game');
+  nextRound();
+});
+
+/* ---------- round flow ---------- */
+function fuseRangeForRound(n){
+  const shrink = Math.min(n-1,6)*550;
+  const min = Math.max(6500-shrink,3200);
+  const max = Math.max(12000-shrink*1.3,5200);
+  return { min, max };
+}
+
+function clearTimers(){
+  if(explodeTimer){ clearTimeout(explodeTimer); explodeTimer=null; }
+  if(botTimer){ clearTimeout(botTimer); botTimer=null; }
+}
+
+function nextRound(){
+  clearTimers();
+  if(scores.me >= matchTarget) return showVictory('me');
+  if(scores.bot >= matchTarget) return showVictory('bot');
+
+  roundNumber++;
+  roundResolved = false;
+  holder = Math.random() < 0.5 ? 'me' : 'bot';
+  holderSince = Date.now();
+
+  $('roundPill').textContent = 'Runda '+roundNumber;
+  $('resultOverlay').classList.remove('show');
+  updateScores();
+  renderHolder();
+
+  const { min, max } = fuseRangeForRound(roundNumber);
+  const fuseMs = min + Math.random()*(max-min);
+  explodeTimer = setTimeout(explode, fuseMs);
+
+  if(holder === 'bot') scheduleBotPass();
+}
+
+function renderHolder(){
+  const mine = holder === 'me';
+  const surface = $('playSurface');
+  surface.classList.toggle('mine', mine);
+  surface.classList.toggle('theirs', !mine);
+  $('bombIcon').style.display = mine ? 'block' : 'none';
+  $('surfaceHint').textContent = mine ? 'SCUTURĂ SAU APASĂ!' : 'botul are bomba…';
+}
+
+function updateScores(){
+  $('myScore').textContent = scores.me;
+  $('botScore').textContent = scores.bot;
+}
+
+function scheduleBotPass(){
+  const range = DIFF_RANGES[difficulty];
+  const delay = Math.max(range.min + Math.random()*(range.max-range.min), MIN_HOLD_MS + 30);
+  botTimer = setTimeout(()=>{
+    if(roundResolved || holder !== 'bot') return;
+    passBomb('bot');
+  }, delay);
+}
+
+function passBomb(who){
+  if(roundResolved) return;
+  if(holder !== who) return;
+  if(Date.now() - holderSince < MIN_HOLD_MS) return;
+  holder = who === 'me' ? 'bot' : 'me';
+  holderSince = Date.now();
+  renderHolder();
+  if(holder === 'me' && navigator.vibrate) navigator.vibrate(25);
+  if(holder === 'bot') scheduleBotPass();
+}
+
+$('playSurface').addEventListener('pointerdown', ()=>{
+  const now = Date.now();
+  if(now - lastLocalPass < 120) return;
+  lastLocalPass = now;
+  passBomb('me');
+});
+
+function explode(){
+  if(roundResolved) return;
+  roundResolved = true;
+  clearTimers();
+  const loser = holder; // whoever is holding loses
+  const winner = loser === 'me' ? 'bot' : 'me';
+  scores[winner]++;
+  updateScores();
+
+  const iLost = loser === 'me';
+  const overlay = $('resultOverlay');
+  overlay.classList.add('show');
+  $('resultTitle').textContent = iLost ? '💥 AI EXPLODAT!' : '😅 AI SCĂPAT!';
+  $('resultTitle').style.color = iLost ? 'var(--danger)' : 'var(--gold)';
+  $('resultSub').textContent = iLost ? 'Botul ia punctul' : '+1 punct pentru tine!';
+  if(navigator.vibrate) navigator.vibrate(iLost ? [0,180,80,180] : [0,40]);
+  $('bombIcon').style.display = 'none';
+  $('playSurface').classList.remove('mine');
+
+  setTimeout(nextRound, 2200);
+}
+
+/* ---------- victory ---------- */
+function showVictory(winner){
+  clearTimers();
+  showScreen('victory');
+  const iWon = winner === 'me';
+  $('victoryIcon').textContent = iWon ? '🏆' : '💀';
+  $('victoryTitle').textContent = iWon ? 'AI CÂȘTIGAT!' : 'A CÂȘTIGAT BOTUL 😅';
+  $('victoryTitle').style.color = iWon ? 'var(--gold)' : 'var(--muted)';
+  $('victorySub').textContent = scores.me + ' – ' + scores.bot;
+}
+$('btnAgain').addEventListener('click', ()=>{
+  showScreen('setup');
+});
+
+/* ---------- shake detection ---------- */
+function attachMotionListener(){
+  let lastX=null,lastY=null,lastZ=null,lastTime=0;
+  const THRESHOLD = 16;
+  window.addEventListener('devicemotion', (e)=>{
+    const acc = e.accelerationIncludingGravity || e.acceleration;
+    if(!acc || acc.x === null) return;
+    const now = Date.now();
+    if(lastTime === 0){ lastX=acc.x; lastY=acc.y; lastZ=acc.z; lastTime=now; return; }
+    const dt = now-lastTime;
+    if(dt < 90) return;
+    const delta = Math.abs((acc.x||0)-lastX) + Math.abs((acc.y||0)-lastY) + Math.abs((acc.z||0)-lastZ);
+    const speed = delta/dt*1000;
+    lastX=acc.x; lastY=acc.y; lastZ=acc.z; lastTime=now;
+    if(speed > THRESHOLD) passBomb('me');
+  });
+}
+
+/* ---------- wake lock ---------- */
+let wakeLock = null;
+async function requestWakeLock(){
+  try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && screens.game.classList.contains('visible')) requestWakeLock();
+});
+})();
+</script>
+</body>
+</html>

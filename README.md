@@ -35,6 +35,18 @@ Telefoanele se conectează la:  http://192.168.1.23:3210/controller.html
 
 Telefoanele și laptopul trebuie să fie **pe aceeași rețea WiFi**.
 
+## Test solo, fără laptop și fără al doilea jucător
+
+`public/bot.html` e un mod de antrenament complet de sine stătător — nu vorbește cu serverul, nu are nevoie de cod de cameră, joci direct pe un singur telefon împotriva unui bot (cu 3 niveluri de dificultate).
+
+Ca să-l încerci fără să pornești `npm start` deloc:
+
+1. Deschide `public/bot.html` pe GitHub, apasă „Raw", apoi salvează pagina (din meniul browserului) ca fișier `.html` pe telefon.
+2. Deschide fișierul salvat cu browserul (din Files/Fișiere, „Open with…").
+3. Alege dificultatea și scorul țintă, apasă START, și activează senzorii când ți se cere.
+
+Dacă ai deja serverul pornit pe un laptop din altă sesiune, e mai simplu să deschizi direct `http://<ip-ul-laptopului>:3210/bot.html` — sau link-ul „Antrenează-te solo vs Bot" de pe ecranul de join al telecomenzii.
+
 ## Dacă telefoanele nu se pot conecta
 
 - Verifică faptul că telefoanele sunt pe **același WiFi** ca laptopul (nu date mobile).
@@ -47,3 +59,4 @@ Telefoanele și laptopul trebuie să fie **pe aceeași rețea WiFi**.
 - `server.js` — server Node (Express + Socket.IO): ține scorul, camerele, deține autoritatea asupra „fitilului" (timpul exact până la explozie e ascuns de la clienți, ca să nu poată fi „calculat").
 - `public/tv.html` — ecranul mare (scor, cod cameră, cod QR, animația rundei).
 - `public/controller.html` — telecomanda de telefon (join, permisiuni senzor, ecranul de joc).
+- `public/bot.html` — mod solo de antrenament vs Bot, 100% client-side, fără server.
