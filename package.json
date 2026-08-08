@@ -1,0 +1,15 @@
+{
+  "name": "cyberslap-bomb-toss",
+  "version": "1.0.0",
+  "description": "CyberSlap: Bomb Toss — joc party 1v1 pe WiFi local. Un PC/laptop e ecranul (TV), telefoanele sunt telecomenzi.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.7.5"
+  }
+}

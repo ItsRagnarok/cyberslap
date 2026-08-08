@@ -1,0 +1,58 @@
+*,*::before,*::after{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{
+  height:100%; margin:0; overflow:hidden; overscroll-behavior:none;
+  background:#04050c; color:#eef4ff;
+  font-family:"Rajdhani","Segoe UI",sans-serif;
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+h1,h2,h3,.font-display{ font-family:"Orbitron","Rajdhani",sans-serif; }
+button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+input{ font:inherit; }
+
+:root{
+  --bg:#04050c;
+  --panel:#0b0e1c;
+  --line:#1c2140;
+  --cyan:#00f6ff; --cyan-dim:#0aa3ad;
+  --magenta:#ff2ee0; --magenta-dim:#a5199a;
+  --gold:#ffd23f;
+  --danger:#ff3b5c;
+  --muted:#8792b8;
+}
+
+.bg-grid{
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(0,246,255,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,246,255,0.06) 1px, transparent 1px);
+  background-size:40px 40px;
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, black 10%, transparent 78%);
+          mask-image: radial-gradient(circle at 50% 40%, black 10%, transparent 78%);
+}
+
+.logo{
+  font-weight:900; letter-spacing:2px; line-height:1;
+  background:linear-gradient(90deg,var(--cyan),var(--magenta));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 18px rgba(0,246,255,.4)) drop-shadow(0 0 18px rgba(255,46,224,.3));
+  margin:0;
+}
+
+.btn{
+  padding:14px 22px; border-radius:14px; font-weight:800; letter-spacing:.5px;
+  background:var(--panel); border:2px solid var(--line); color:#c7cfec;
+}
+.btn.primary{
+  background:linear-gradient(90deg,var(--cyan),var(--magenta)); color:#04050c; border:none;
+  box-shadow:0 10px 26px -10px rgba(255,46,224,.55);
+}
+.btn:disabled{ opacity:.4; }
+.btn:active:not(:disabled){ transform:scale(.97); }
+
+.pill{
+  display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:999px;
+  border:1px solid var(--line); background:rgba(255,255,255,.03); font-size:.85rem; font-weight:700;
+}

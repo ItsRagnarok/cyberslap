@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberSlap: Bomb Toss — TV</title>
+<meta name="theme-color" content="#04050c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+body{ display:flex; align-items:center; justify-content:center; padding:24px; }
+#stage{ width:100%; max-width:1200px; }
+
+/* ---------- lobby ---------- */
+#screen-lobby{ text-align:center; }
+.logo-big{ font-size:clamp(2.6rem,7vw,4.6rem); margin-bottom:6px; }
+.tagline{ color:var(--muted); font-weight:600; margin:0 0 30px; font-size:1.1rem; }
+
+.lobby-grid{ display:flex; gap:40px; align-items:center; justify-content:center; flex-wrap:wrap; }
+.join-box{ text-align:center; }
+.room-code{
+  font-family:"Orbitron",sans-serif; font-weight:900; font-size:clamp(2.4rem,6vw,3.6rem);
+  letter-spacing:10px; color:var(--gold); text-shadow:0 0 24px rgba(255,210,63,.5);
+  background:var(--panel); border:2px solid var(--line); border-radius:18px; padding:14px 26px; margin-bottom:14px;
+}
+.qr-wrap{ background:#fff1; padding:14px; border-radius:18px; border:2px solid var(--line); display:inline-block; }
+.qr-wrap img{ width:200px; height:200px; display:block; }
+.url-list{ margin-top:12px; font-size:.9rem; color:var(--muted); }
+.url-list div{ margin:2px 0; }
+
+.players-box{ min-width:260px; }
+.player-row{
+  display:flex; align-items:center; gap:12px; padding:14px 18px; border-radius:14px;
+  background:var(--panel); border:2px solid var(--line); margin-bottom:12px; font-weight:800; font-size:1.1rem;
+}
+.player-row .dot{ width:14px; height:14px; border-radius:50%; background:#333; flex:0 0 auto; }
+.player-row.connected .dot{ background:var(--gold); box-shadow:0 0 10px var(--gold); }
+.player-row .status{ margin-left:auto; font-size:.8rem; color:var(--muted); font-weight:700; }
+.player-row.p1{ border-color: var(--magenta-dim); }
+.player-row.p2{ border-color: var(--cyan-dim); }
+.player-row.waiting{ color:var(--muted); font-style:normal; }
+
+.target-row{ display:flex; gap:10px; justify-content:center; margin:22px 0 8px; }
+.target-row .btn{ min-width:64px; }
+.target-row .btn.active{ border-color:var(--gold); color:var(--gold); box-shadow:0 0 14px rgba(255,210,63,.3) inset; }
+
+#btnStart{ margin-top:18px; font-size:1.15rem; padding:18px 38px; }
+
+/* ---------- game ---------- */
+#screen-game{ display:none; }
+.scoreboard{
+  display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;
+  font-family:"Orbitron",sans-serif; font-weight:900;
+}
+.score-side{ flex:1; text-align:center; }
+.score-side .name{ font-size:1rem; color:var(--muted); font-weight:700; margin-bottom:4px; }
+.score-side.p1 .name{ color:var(--magenta); }
+.score-side.p2 .name{ color:var(--cyan); }
+.score-side .num{ font-size:clamp(2.4rem,7vw,4rem); }
+.score-side.p1 .num{ color:var(--magenta); text-shadow:0 0 20px var(--magenta); }
+.score-side.p2 .num{ color:var(--cyan); text-shadow:0 0 20px var(--cyan); }
+.vs-mid{ font-size:1.2rem; color:var(--muted); padding:0 20px; }
+.round-label{ text-align:center; color:var(--muted); font-weight:700; letter-spacing:2px; margin-bottom:18px; }
+
+.arena{ display:flex; gap:18px; }
+.side{
+  flex:1; height:min(46vh,420px); border-radius:24px; position:relative; overflow:hidden;
+  display:flex; align-items:center; justify-content:center; background:var(--panel);
+  border:3px solid var(--line); transition:border-color .2s ease, box-shadow .2s ease;
+}
+.side.p1{ border-color: var(--magenta-dim); }
+.side.p2{ border-color: var(--cyan-dim); }
+.side.holder.p1{ border-color:var(--magenta); box-shadow:0 0 40px rgba(255,46,224,.35) inset, 0 0 40px rgba(255,46,224,.25); }
+.side.holder.p2{ border-color:var(--cyan); box-shadow:0 0 40px rgba(0,246,255,.35) inset, 0 0 40px rgba(0,246,255,.25); }
+.side .label{ position:absolute; top:14px; left:0; right:0; text-align:center; font-weight:800; color:var(--muted); letter-spacing:2px; font-size:.95rem; }
+.bomb{ font-size:clamp(3.5rem,10vw,6rem); filter:drop-shadow(0 0 14px rgba(255,80,80,.5)); }
+.bomb.pulse{ animation:bombPulse .7s ease-in-out infinite; }
+@keyframes bombPulse{ 0%,100%{ transform:scale(1) rotate(-4deg);} 50%{ transform:scale(1.12) rotate(4deg);} }
+.boom{ font-size:clamp(4rem,14vw,8rem); animation:boomAnim .6s ease-out; }
+@keyframes boomAnim{ 0%{ transform:scale(.3); opacity:0; } 40%{ transform:scale(1.3); opacity:1; } 100%{ transform:scale(1); opacity:1; } }
+.idle-text{ color:var(--muted); font-weight:700; letter-spacing:1px; }
+
+.paused-banner{
+  text-align:center; margin-top:16px; color:var(--danger); font-weight:800; letter-spacing:1px;
+  display:none;
+}
+.paused-banner.show{ display:block; }
+
+/* ---------- victory ---------- */
+#screen-victory{ display:none; text-align:center; }
+.victory-name{ font-family:"Orbitron",sans-serif; font-weight:900; font-size:clamp(2.2rem,7vw,3.6rem); text-shadow:0 0 30px currentColor; }
+.victory-sub{ color:var(--muted); font-weight:700; margin-top:10px; font-size:1.1rem; }
+.confetti{ position:fixed; z-index:15; pointer-events:none; }
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div id="stage">
+
+  <div id="screen-lobby">
+    <h1 class="logo logo-big">CYBERSLAP</h1>
+    <p class="tagline">Bomb Toss — scuturați telefonul ca să paseze bomba</p>
+    <div class="lobby-grid">
+      <div class="join-box">
+        <div class="room-code" id="roomCode">----</div>
+        <div class="qr-wrap"><img id="qrImg" alt="QR code"></div>
+        <div class="url-list" id="urlList"></div>
+      </div>
+      <div class="players-box">
+        <div class="player-row p1 waiting" id="playerRow1"><div class="dot"></div><span id="playerName1">Așteaptă Jucător 1…</span><span class="status" id="playerStatus1"></span></div>
+        <div class="player-row p2 waiting" id="playerRow2"><div class="dot"></div><span id="playerName2">Așteaptă Jucător 2…</span><span class="status" id="playerStatus2"></span></div>
+        <div class="target-row" id="targetRow">
+          <button class="btn" data-t="3">Bo3</button>
+          <button class="btn active" data-t="5">Bo5</button>
+          <button class="btn" data-t="7">Bo7</button>
+        </div>
+        <button class="btn primary" id="btnStart" disabled>ÎNCEPE MECIUL</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-game">
+    <div class="scoreboard">
+      <div class="score-side p1"><div class="name" id="scoreName1">P1</div><div class="num" id="scoreNum1">0</div></div>
+      <div class="vs-mid" id="vsMid">Bo5</div>
+      <div class="score-side p2"><div class="name" id="scoreName2">P2</div><div class="num" id="scoreNum2">0</div></div>
+    </div>
+    <div class="round-label" id="roundLabel">RUNDA 1</div>
+    <div class="arena">
+      <div class="side p1" id="side1"><div class="label" id="sideLabel1">P1</div><div class="content" id="sideContent1"><span class="idle-text">…</span></div></div>
+      <div class="side p2" id="side2"><div class="label" id="sideLabel2">P2</div><div class="content" id="sideContent2"><span class="idle-text">…</span></div></div>
+    </div>
+    <div class="paused-banner" id="pausedBanner">⏸ JOC ÎNTRERUPT — un jucător s-a deconectat…</div>
+  </div>
+
+  <div id="screen-victory">
+    <div class="victory-name" id="victoryName">P1 CÂȘTIGĂ!</div>
+    <div class="victory-sub" id="victorySub">5 – 3</div>
+    <div class="victory-sub" style="margin-top:22px;">Apăsați REVANȘĂ pe telefon pentru un meci nou</div>
+  </div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+"use strict";
+const socket = io();
+
+const screens = {
+  lobby: document.getElementById('screen-lobby'),
+  game: document.getElementById('screen-game'),
+  victory: document.getElementById('screen-victory'),
+};
+function showScreen(name){
+  Object.entries(screens).forEach(([k,el])=> el.style.display = (k===name ? (k==='game'?'block':'block') : 'none'));
+}
+showScreen('lobby');
+
+let roomCode = null;
+let matchTarget = 5;
+let holdPulseTimer = null;
+
+/* ---------- create room ---------- */
+socket.emit('tv:create', {}, async (res)=>{
+  if(!res || !res.ok) return;
+  roomCode = res.code;
+  document.getElementById('roomCode').textContent = roomCode;
+
+  const info = await fetch('/api/host-info').then(r=>r.json()).catch(()=>({addresses:[]}));
+  const urlListEl = document.getElementById('urlList');
+  urlListEl.innerHTML = '';
+  const addrs = info.addresses && info.addresses.length ? info.addresses : ['<IP-ul PC-ului tău>'];
+  addrs.forEach(ip=>{
+    const div = document.createElement('div');
+    div.textContent = 'http://'+ip+':'+(info.port||location.port)+'/controller.html';
+    urlListEl.appendChild(div);
+  });
+
+  const joinUrl = 'http://'+addrs[0]+':'+(info.port||location.port)+'/controller.html?room='+roomCode;
+  try{
+    const qr = await fetch('/api/qrcode?text='+encodeURIComponent(joinUrl)).then(r=>r.json());
+    if(qr.dataUrl) document.getElementById('qrImg').src = qr.dataUrl;
+  }catch(e){}
+});
+
+/* ---------- target score buttons ---------- */
+document.querySelectorAll('#targetRow .btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#targetRow .btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    matchTarget = parseInt(btn.dataset.t,10);
+    socket.emit('tv:setTarget', { code: roomCode, target: matchTarget });
+  });
+});
+
+document.getElementById('btnStart').addEventListener('click', ()=>{
+  socket.emit('tv:start', { code: roomCode });
+});
+
+/* ---------- room updates ---------- */
+socket.on('room:update', (state)=>{
+  matchTarget = state.matchTarget;
+  document.getElementById('vsMid').textContent = 'Bo'+matchTarget;
+
+  const p1 = state.players[0], p2 = state.players[1];
+  fillPlayerRow(1, p1);
+  fillPlayerRow(2, p2);
+
+  document.getElementById('scoreName1').textContent = p1 ? p1.name : 'P1';
+  document.getElementById('scoreName2').textContent = p2 ? p2.name : 'P2';
+  document.getElementById('sideLabel1').textContent = p1 ? p1.name : 'P1';
+  document.getElementById('sideLabel2').textContent = p2 ? p2.name : 'P2';
+  document.getElementById('scoreNum1').textContent = state.scores[1];
+  document.getElementById('scoreNum2').textContent = state.scores[2];
+
+  const bothIn = p1 && p1.connected && p2 && p2.connected;
+  document.getElementById('btnStart').disabled = !bothIn || state.phase !== 'lobby';
+
+  if(state.phase === 'lobby'){ showScreen('lobby'); }
+});
+
+function fillPlayerRow(slot, p){
+  const row = document.getElementById('playerRow'+slot);
+  const nameEl = document.getElementById('playerName'+slot);
+  const statusEl = document.getElementById('playerStatus'+slot);
+  if(!p){
+    row.classList.remove('connected'); row.classList.add('waiting');
+    nameEl.textContent = 'Așteaptă Jucător '+slot+'…';
+    statusEl.textContent = '';
+  } else {
+    row.classList.remove('waiting');
+    row.classList.toggle('connected', p.connected);
+    nameEl.textContent = p.name;
+    statusEl.textContent = p.connected ? '✅ conectat' : '❌ deconectat';
+  }
+}
+
+/* ---------- round flow ---------- */
+socket.on('round:start', (data)=>{
+  showScreen('game');
+  document.getElementById('pausedBanner').classList.remove('show');
+  document.getElementById('roundLabel').textContent = 'RUNDA '+data.roundNumber;
+  document.getElementById('scoreNum1').textContent = data.scores[1];
+  document.getElementById('scoreNum2').textContent = data.scores[2];
+  setHolder(data.holderSlot);
+});
+
+socket.on('bomb:update', (data)=>{
+  setHolder(data.holderSlot);
+});
+
+function setHolder(holderSlot){
+  [1,2].forEach(slot=>{
+    const side = document.getElementById('side'+slot);
+    const content = document.getElementById('sideContent'+slot);
+    const isHolder = slot === holderSlot;
+    side.classList.toggle('holder', isHolder);
+    side.classList.toggle('p1', slot===1);
+    side.classList.toggle('p2', slot===2);
+    content.innerHTML = isHolder ? '<div class="bomb pulse">💣</div>' : '<span class="idle-text">așteaptă…</span>';
+  });
+}
+
+socket.on('round:explode', (data)=>{
+  const loserSide = document.getElementById('sideContent'+data.loserSlot);
+  const winnerSide = document.getElementById('sideContent'+data.winnerSlot);
+  loserSide.innerHTML = '<div class="boom">💥</div>';
+  winnerSide.innerHTML = '<span class="idle-text">😅 ai scăpat</span>';
+  document.getElementById('side'+data.loserSlot).classList.remove('holder');
+  document.getElementById('side'+data.winnerSlot).classList.remove('holder');
+  document.getElementById('scoreNum1').textContent = data.scores[1];
+  document.getElementById('scoreNum2').textContent = data.scores[2];
+});
+
+socket.on('room:paused', ()=>{
+  document.getElementById('pausedBanner').classList.add('show');
+});
+socket.on('room:resumed', (data)=>{
+  document.getElementById('pausedBanner').classList.remove('show');
+  setHolder(data.holderSlot);
+});
+
+/* ---------- victory ---------- */
+socket.on('match:victory', (data)=>{
+  showScreen('victory');
+  const p1Name = document.getElementById('scoreName1').textContent;
+  const p2Name = document.getElementById('scoreName2').textContent;
+  const winnerName = data.winnerSlot === 1 ? p1Name : p2Name;
+  const el = document.getElementById('victoryName');
+  el.textContent = '🏆 ' + winnerName + ' CÂȘTIGĂ!';
+  el.style.color = data.winnerSlot === 1 ? 'var(--magenta)' : 'var(--cyan)';
+  document.getElementById('victorySub').textContent = data.scores[1] + ' – ' + data.scores[2] + (data.forfeited ? ' (adversarul nu s-a reconectat)' : '');
+  launchConfetti(data.winnerSlot);
+});
+
+function launchConfetti(winnerSlot){
+  const colors = winnerSlot===1 ? ['#ff2ee0','#ffd23f','#fff'] : ['#00f6ff','#ffd23f','#fff'];
+  for(let i=0;i<60;i++){
+    const p = document.createElement('div');
+    p.className='confetti';
+    const size = 6+Math.random()*7;
+    p.style.width=size+'px'; p.style.height=size+'px';
+    p.style.background = colors[Math.floor(Math.random()*colors.length)];
+    p.style.borderRadius = Math.random()<.5?'50%':'2px';
+    const startX = window.innerWidth/2, startY = window.innerHeight/2;
+    p.style.left = startX+'px'; p.style.top = startY+'px';
+    document.body.appendChild(p);
+    const angle = Math.random()*Math.PI*2;
+    const dist = 100 + Math.random()*320;
+    const dx = Math.cos(angle)*dist, dy = Math.sin(angle)*dist - 60;
+    const rot = Math.random()*360;
+    p.animate([
+      { transform:'translate(0,0) rotate(0deg)', opacity:1 },
+      { transform:'translate('+dx+'px,'+dy+'px) rotate('+rot+'deg)', opacity:0 }
+    ], { duration: 1100+Math.random()*600, easing:'cubic-bezier(.2,.7,.3,1)' });
+    setTimeout(()=>p.remove(), 1800);
+  }
+}
+})();
+</script>
+</body>
+</html>
