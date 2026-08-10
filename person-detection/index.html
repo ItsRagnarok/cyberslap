@@ -6,10 +6,16 @@
 <title>Detecție persoane — cameră live</title>
 <meta name="description" content="Aplicație care folosește camera și încadrează persoanele detectate cu eticheta HUMAN.">
 <style>
+  :root {
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+  }
   *, *::before, *::after { box-sizing: border-box; }
   html, body {
     margin: 0;
-    height: 100%;
+    min-height: 100dvh;
     background: #0b0d12;
     color: #eef1f5;
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -18,13 +24,16 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 20px 16px 32px;
+    justify-content: center;
+    gap: 12px;
+    min-height: 100dvh;
+    padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(20px + var(--safe-b)) calc(16px + var(--safe-l));
+    overflow-x: hidden;
   }
   h1 {
-    font-size: 1.15rem;
+    font-size: clamp(0.95rem, 3.2vw, 1.15rem);
     font-weight: 600;
-    margin: 4px 0 0;
+    margin: 0;
     text-align: center;
   }
   #status {
@@ -35,13 +44,14 @@
   }
   #stage {
     position: relative;
-    width: 100%;
-    max-width: 720px;
+    width: min(100%, 720px);
     aspect-ratio: 4 / 3;
+    max-height: min(60dvh, 540px);
     background: #14161c;
     border-radius: 14px;
     overflow: hidden;
     box-shadow: 0 10px 40px -12px rgba(0,0,0,0.6);
+    touch-action: manipulation;
   }
   video, canvas {
     position: absolute;
@@ -61,13 +71,17 @@
     font: inherit;
     font-size: 0.95rem;
     font-weight: 600;
-    padding: 10px 20px;
+    padding: 12px 20px;
+    min-height: 44px;
     border-radius: 999px;
     border: none;
     cursor: pointer;
     background: #4f8cff;
     color: #fff;
     transition: opacity 0.15s ease, transform 0.15s ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button:not(:disabled):hover { transform: translateY(-1px); }
@@ -77,6 +91,45 @@
     color: #9aa4b2;
   }
   #count strong { color: #7fe08c; }
+
+  /* Telefon orientat orizontal (landscape) cu înălțime mică — cel mai comun caz
+     unde layout-ul pe verticală ar forța scroll și ar micșora inutil camera.
+     Trecem la o coloană de controale îngustă lângă cameră, în loc de tot sub ea. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    body {
+      flex-direction: row;
+      align-items: stretch;
+      justify-content: center;
+      gap: 14px;
+      padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) calc(10px + var(--safe-b)) calc(14px + var(--safe-l));
+    }
+    #stage {
+      width: auto;
+      height: auto;
+      aspect-ratio: auto;
+      max-height: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      align-self: stretch;
+    }
+    h1, #tapHint { display: none; }
+    #sidebar {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: stretch;
+      gap: 10px;
+      width: 168px;
+      flex: 0 0 auto;
+    }
+    #controls { flex-direction: column; }
+    #status, #count { text-align: center; }
+  }
+
+  @media (max-width: 380px) {
+    button { padding: 11px 14px; font-size: 0.88rem; }
+    #controls { gap: 8px; }
+  }
   #tapMarker {
     position: absolute;
     pointer-events: none;
@@ -114,7 +167,6 @@
 <body>
 
 <h1>Detecție persoane în timp real</h1>
-<div id="status">Apasă „Pornește camera” pentru a începe.</div>
 
 <div id="stage">
   <video id="video" class="mirrored" autoplay playsinline muted></video>
@@ -122,13 +174,16 @@
   <div id="tapMarker"><div class="dot"></div><div class="bubble"></div></div>
 </div>
 
-<div id="controls">
-  <button id="startBtn">Pornește camera</button>
-  <button id="switchBtn" class="secondary">Schimbă camera</button>
-  <button id="stopBtn" class="secondary" disabled>Oprește</button>
+<div id="sidebar">
+  <div id="status">Apasă „Pornește camera” pentru a începe.</div>
+  <div id="controls">
+    <button id="startBtn">Pornește camera</button>
+    <button id="switchBtn" class="secondary">Schimbă camera</button>
+    <button id="stopBtn" class="secondary" disabled>Oprește</button>
+  </div>
+  <div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
+  <div id="tapHint">Atinge ecranul ca să afli ce e în acel punct.</div>
 </div>
-<div id="count">Persoane detectate: <strong id="countValue">0</strong></div>
-<div id="tapHint">Atinge ecranul ca să afli ce e în acel punct.</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
